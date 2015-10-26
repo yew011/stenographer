@@ -80,6 +80,7 @@
 #include "aio.h"
 #include "index.h"
 #include "packets.h"
+#include "shm.h"
 #include "util.h"
 
 namespace {
@@ -87,6 +88,7 @@ namespace {
 std::string flag_iface = "eth0";
 std::string flag_filter = "";
 std::string flag_dir = "";
+std::string flag_shm_file = "";
 int64_t flag_count = -1;
 int32_t flag_blocks = 2048;
 int32_t flag_aiops = 128;
@@ -170,6 +172,8 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
       break;
     case 317:
       flag_watchdogs = false;
+    case 318:
+      flag_shm_file = arg;
   }
   return 0;
 }
@@ -204,6 +208,7 @@ void ParseOptions(int argc, char** argv) {
       {"preallocate_file_mb", 316, n, 0,
        "When creating new files, preallocate to this many MB"},
       {"no_watchdogs", 317, 0, 0, "Don't start any watchdogs"},
+      {"shm_file", 318, s, 0, "File path to be created for memory sharing"},
       {0}, };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
@@ -400,7 +405,7 @@ void HandleSignalsThread() {
 }
 
 void RunThread(int thread, st::ProducerConsumerQueue* write_index,
-               PacketsV3* v3) {
+               PacketsV3* v3, Shm* Shm) {
   if (flag_threads > 1) {
     LOG_IF_ERROR(SetAffinity(thread), "set affinity");
   }
@@ -460,6 +465,12 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
     CHECK_SUCCESS(v3->NextBlock(&b, kNumMillisPerSecond));
     if (b.Empty()) {
       continue;
+    }
+    // If specified, share the block through Shm.
+    if (Shm) {
+      if (Shm->ShareBlock(b.Start())) {
+        LOG(ERROR) << "Fail to load block into shared memory.\n";
+      }
     }
 
     // Index all packets if necessary.
@@ -522,6 +533,9 @@ int Main(int argc, char** argv) {
   if (flag_dir[flag_dir.size() - 1] != '/') {
     flag_dir += "/";
   }
+
+  // Inter-process memory sharing object.
+  Shm* Shm = ShmSetUp(flag_threads, flag_shm_file, flag_blocks);
 
   // Before we drop any privileges, set up our sniffing sockets.
   // We have to do this before calling DropPrivileges, which does a
@@ -591,7 +605,7 @@ int Main(int argc, char** argv) {
   for (int i = 0; i < flag_threads; i++) {
     LOG(V1) << "Starting thread " << i;
     threads.push_back(
-        new std::thread(&RunThread, i, &write_indexes[i], sockets[i]));
+        new std::thread(&RunThread, i, &write_indexes[i], sockets[i], Shm));
   }
 
   // To avoid blocking on index writes, each writer thread has a secondary
@@ -631,6 +645,7 @@ int Main(int argc, char** argv) {
       delete index_threads[i];
     }
   }
+  delete Shm;
   delete[] write_indexes;
   LOG(INFO) << "Process exiting successfully";
   main_complete.Notify();

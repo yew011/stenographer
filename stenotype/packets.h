@@ -74,6 +74,8 @@ class Block {
 
   bool Empty() { return start_ == NULL; }
 
+  char* Start() { return start_; }
+
  private:
   friend class PacketsV3;
   void UpdateStats(Stats* stats);
