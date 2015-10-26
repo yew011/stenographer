@@ -41,6 +41,28 @@ std::string Dirname(const std::string& filename) {
   return std::string(dirname(copy));
 }
 
+bool Bitmap::Isset(uint32_t idx) {
+  CHECK(idx < size_);
+
+  return map_[idx / VAR_BITS(*map_)] & ((uint32_t) 1 << (idx % VAR_BITS(*map_)));
+}
+
+void Bitmap::Set(uint32_t idx) {
+  CHECK(idx < size_);
+
+  map_[idx / VAR_BITS(*map_)] |= ((uint32_t) 1 << (idx % VAR_BITS(*map_)));
+}
+
+void Bitmap::Unset(uint32_t idx) {
+  CHECK(idx < size_);
+
+  map_[idx / VAR_BITS(*map_)] &= ~((uint32_t) 1 << (idx % VAR_BITS(*map_)));
+}
+
+void Bitmap::ResetAll(void) {
+  memset(map_, 0, size_);
+}
+
 void Barrier::Block() {
   std::unique_lock<std::mutex> lock(mu_);
   count_++;
