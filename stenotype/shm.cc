@@ -50,6 +50,7 @@ Shm::Shm(std::string shm_file, uint32_t blocks, std::string punix_file) :
   CHECK(shm_ptr_ != MAP_FAILED);
 
   // Create listening (i.e. passive unix domain) socket (non-blocking).
+  unlink(punix_file_.c_str());
   struct sockaddr_un addr;
   punix_sock_ = socket(AF_UNIX, SOCK_STREAM, 0);
   CHECK_SUCCESS(Errno(punix_sock_));
@@ -59,7 +60,8 @@ Shm::Shm(std::string shm_file, uint32_t blocks, std::string punix_file) :
   CHECK_SUCCESS(Errno(bind(punix_sock_, (struct sockaddr*) &addr,
                            sizeof addr)));
   CHECK_SUCCESS(Errno(listen(punix_sock_, 1)));
-  CHECK_SUCCESS(Errno(fcntl(punix_sock_, F_SETFL, O_NONBLOCK)));
+  int flags = fcntl(punix_sock_, F_GETFL, 0);
+  CHECK_SUCCESS(Errno(fcntl(punix_sock_, F_SETFL, flags | O_NONBLOCK)));
 }
 
 Shm::~Shm() {
@@ -92,10 +94,11 @@ void Shm::Run(void) {
     // Accepted socket should also be non-blocking.
     CHECK_SUCCESS(Errno(fcntl(accept_sock_, F_SETFL, O_NONBLOCK)));
   }
+  LOG(INFO) << "Shm: after accept\n";
 }
 
 void Shm::ShareBlock(char* base) {
-  if (connected_) {
+  if (!connected_) {
     return;
   }
   if (map_->Isset(cur_idx_)) {
@@ -132,7 +135,7 @@ void Shm::ShareBlock(char* base) {
 }
 
 void Shm::ReclaimBlock(void) {
-  if (connected_) {
+  if (!connected_) {
     return;
   }
 

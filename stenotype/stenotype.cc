@@ -89,7 +89,7 @@ std::string flag_iface = "eth0";
 std::string flag_filter = "";
 std::string flag_dir = "";
 std::string flag_shm_file = "";
-std::string flag_shm_punix_file = "stenotype-shm.sock";
+std::string flag_shm_punix_file = "/tmp/stenotype-shm.sock";
 int64_t flag_count = -1;
 int32_t flag_blocks = 2048;
 int32_t flag_aiops = 128;
@@ -173,10 +173,13 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
       break;
     case 317:
       flag_watchdogs = false;
+      break;
     case 318:
       flag_shm_file = arg;
+      break;
     case 319:
       flag_shm_punix_file = arg;
+      break;
   }
   return 0;
 }
