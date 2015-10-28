@@ -16,22 +16,29 @@
 #include "util.h"
 
 #include <fcntl.h>
+#include <string.h>    // memset() strncpy()
 #include <sys/mman.h>  // mmap() munmap() shm_open() shm_unlink()
 #include <sys/stat.h>
+#include <sys/socket.h>// socket() bind() listen() accept()
 #include <sys/types.h>
-#include <unistd.h>    // close()
+#include <sys/un.h>    // sockaddr_un
+#include <unistd.h>    // close() unlink()
 
 #include <cerrno>
 #include <string>
 
 namespace st {
 
-Shm::Shm(std::string file, size_t blocks) {
-  CHECK(!file.empty());
+Shm::Shm(std::string shm_file, uint32_t blocks, std::string punix_file) :
+  shm_file_(shm_file),
+  blocks_(blocks),
+  cur_idx_(0),
+  punix_file_(punix_file),
+  connected_(false) {
+  // Sanity check.
+  CHECK(!shm_file_.empty() && !punix_file_.empty());
 
-  cur_idx_ = 0;
-  shm_file_ = file;
-  blocks_ = blocks;
+  // Create shared memory.
   map_ = new Bitmap(blocks_);
   shm_fd_ = shm_open(shm_file_.c_str(), O_CREAT | O_RDWR,
                      S_IRUSR | S_IWUSR | S_IRGRP);
@@ -41,6 +48,18 @@ Shm::Shm(std::string file, size_t blocks) {
                                      PROT_READ | PROT_WRITE,
                                      MAP_SHARED, shm_fd_, 0));
   CHECK(shm_ptr_ != MAP_FAILED);
+
+  // Create listening (i.e. passive unix domain) socket (non-blocking).
+  struct sockaddr_un addr;
+  punix_sock_ = socket(AF_UNIX, SOCK_STREAM, 0);
+  CHECK_SUCCESS(Errno(punix_sock_));
+  memset(&addr, 0, sizeof addr);
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, punix_file_.c_str(), punix_file_.length());
+  CHECK_SUCCESS(Errno(bind(punix_sock_, (struct sockaddr*) &addr,
+                           sizeof addr)));
+  CHECK_SUCCESS(Errno(listen(punix_sock_, 1)));
+  CHECK_SUCCESS(Errno(fcntl(punix_sock_, F_SETFL, O_NONBLOCK)));
 }
 
 Shm::~Shm() {
@@ -48,26 +67,108 @@ Shm::~Shm() {
   CHECK_SUCCESS(Errno(munmap(shm_ptr_, blocks_ << 20)));
   CHECK_SUCCESS(Errno(close(shm_fd_)));
   CHECK_SUCCESS(Errno(shm_unlink(shm_file_.c_str())));
+  CHECK_SUCCESS(Errno(close(punix_sock_)));
+  if (connected_) {
+    CHECK_SUCCESS(Errno(close(accept_sock_)));
+  }
+  CHECK_SUCCESS(Errno(unlink(punix_file_.c_str())));
 }
 
-Error Shm::ShareBlock(char* base) {
-  RETURN_IF_ERROR(map_->Isset(cur_idx_) ? Errno(ENOBUFS) : SUCCESS,
-                  "Shared memory filled up.\n");
+void Shm::Run(void) {
+  if (connected_) {
+    return;
+  }
 
+  accept_sock_ = accept(punix_sock_, NULL, NULL);
+  if (accept_sock_ == -1) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      // Pass.
+    } else {
+      CHECK_SUCCESS(Errno(accept_sock_));
+    }
+  } else {
+    LOG(INFO) << "Shm: new connection accepted\n";
+    connected_ = true;
+    // Accepted socket should also be non-blocking.
+    CHECK_SUCCESS(Errno(fcntl(accept_sock_, F_SETFL, O_NONBLOCK)));
+  }
+}
+
+void Shm::ShareBlock(char* base) {
+  if (connected_) {
+    return;
+  }
+  if (map_->Isset(cur_idx_)) {
+    LOG(ERROR) << "Shm: shared memory no more space\n";
+    return;
+  }
+
+  // Copy block to shared memory.
   map_->Set(cur_idx_);
   memcpy(base, shm_ptr_ + (cur_idx_ << 20), 1 << 20);
-  cur_idx_ = (cur_idx_ + 1) % blocks_;
 
-  return SUCCESS;
+  // Notify peer process.
+  ssize_t cnt;
+  cnt = send(accept_sock_, &cur_idx_, sizeof cur_idx_, 0);
+  if (cnt == -1) {
+    if (errno != EAGAIN && errno !=EWOULDBLOCK) {
+      LOG(FATAL) << "Shm: send blocked\n";
+    } else if (errno == ECONNRESET) {
+      LOG(ERROR) << "Shm: connection lost\n";
+      CHECK_SUCCESS(Errno(close(accept_sock_)));
+      connected_ = false;
+      map_->ResetAll();
+    } else {
+      LOG(FATAL) << "Shm: unexpected error\n";
+    }
+  } else {
+    if (cnt != sizeof cur_idx_) {
+      LOG(FATAL) << "Shm: partial write to 'accept_sock_'\n";
+    }
+  }
+
+  // Move to next index.
+  cur_idx_ = (cur_idx_ + 1) % blocks_;
+}
+
+void Shm::ReclaimBlock(void) {
+  if (connected_) {
+    return;
+  }
+
+  uint32_t freed_idx;
+  ssize_t cnt;
+  for (;;) {
+    cnt = recv(accept_sock_, &freed_idx, sizeof freed_idx, 0);
+    if (cnt == -1) {
+      if (errno != EAGAIN && errno !=EWOULDBLOCK) {
+        // Pass.
+      } else if (errno == ECONNRESET) {
+        LOG(ERROR) << "Shm: connection lost\n";
+        CHECK_SUCCESS(Errno(close(accept_sock_)));
+        connected_ = false;
+        map_->ResetAll();
+      } else {
+        LOG(FATAL) << "Shm: unexpected error\n";
+      }
+      break;
+    } else {
+      if (cnt != sizeof cur_idx_) {
+        LOG(FATAL) << "Shm: partial read from 'accept_sock_'\n";
+      }
+    }
+    map_->Unset(freed_idx);
+  }
 }
 
 // Only supports single thread.
-Shm* ShmSetUp(int32_t threads, std::string file, size_t blocks) {
+Shm* ShmSetUp(int32_t threads, std::string shm_file, uint32_t blocks,
+              std::string punix_file) {
   if (threads > 1) {
     return NULL;
   }
 
-  return new Shm(file, blocks);
+  return new Shm(shm_file, blocks, punix_file);
 }
 
 }  // namespace st

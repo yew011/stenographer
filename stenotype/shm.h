@@ -27,24 +27,34 @@ namespace st {
 // Information on a single packet in an AF_PACKET block.
 class Shm {
  public:
-  Shm(std::string file, size_t blocks);
+  Shm(std::string shm_file, uint32_t blocks, std::string punix_file);
 
   ~Shm();
 
-  // Put the memory block in the shared memory.0
-  Error ShareBlock(char* base);
+  // Connection check and restoration.
+  void Run(void);
+
+  // Put the memory block in the shared memory.
+  void ShareBlock(char* base);
+
+  // Try reclaiming a memory block returned by the peer process.
+  void ReclaimBlock(void);
 
  private:
-  Bitmap* map_;          // Bitmap for tracking the shared memory usage.
-  size_t blocks_;        // Number of 1MB blocks in the shared memory.
-  size_t cur_idx_;       // Current index in bitmap.
-  std::string shm_file_; // Name of the shm_open file.
-  int shm_fd_;           // fd returned after shm_open().
-  char* shm_ptr_;        // ptr returned after mmap().
+  Bitmap* map_;           // Bitmap for tracking the shared memory usage.
+  uint32_t blocks_;       // Number of 1MB blocks in the shared memory.
+  uint32_t cur_idx_;      // Current index in bitmap.
+  std::string shm_file_;  // Name of the shm_open file.
+  int shm_fd_;            // fd returned after shm_open().
+  char* shm_ptr_;         // ptr returned after mmap().
+  int punix_sock_;        // listening non-blocking unix domain socket.
+  std::string punix_file_;// file path to bind the unix ddomain socket.
+  int accept_sock_;       // socket accepted from 'punix_sock_'.
+  bool connected_;        // true if the 'accpet_sock_' is still connected.
 };
 
-Shm* ShmSetUp(int32_t threads, std::string file, size_t blocks);
-
+Shm* ShmSetUp(int32_t threads, std::string shm_file, uint32_t blocks,
+              std::string punix_fix);
 }
 
 #endif  // STENOGRAPHER_SHM_H_

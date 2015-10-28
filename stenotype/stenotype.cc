@@ -89,6 +89,7 @@ std::string flag_iface = "eth0";
 std::string flag_filter = "";
 std::string flag_dir = "";
 std::string flag_shm_file = "";
+std::string flag_shm_punix_file = "stenotype-shm.sock";
 int64_t flag_count = -1;
 int32_t flag_blocks = 2048;
 int32_t flag_aiops = 128;
@@ -174,6 +175,8 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
       flag_watchdogs = false;
     case 318:
       flag_shm_file = arg;
+    case 319:
+      flag_shm_punix_file = arg;
   }
   return 0;
 }
@@ -209,6 +212,8 @@ void ParseOptions(int argc, char** argv) {
        "When creating new files, preallocate to this many MB"},
       {"no_watchdogs", 317, 0, 0, "Don't start any watchdogs"},
       {"shm_file", 318, s, 0, "File path to be created for memory sharing"},
+      {"shm_punix_file", 319, s, 0,
+       "file to be bound by the unix domain socket created for Shm."},
       {0}, };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
@@ -468,9 +473,9 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
     }
     // If specified, share the block through Shm.
     if (Shm) {
-      if (Shm->ShareBlock(b.Start())) {
-        LOG(ERROR) << "Fail to load block into shared memory.\n";
-      }
+      Shm->Run();
+      Shm->ShareBlock(b.Start());
+      Shm->ReclaimBlock();
     }
 
     // Index all packets if necessary.
@@ -535,7 +540,8 @@ int Main(int argc, char** argv) {
   }
 
   // Inter-process memory sharing object.
-  Shm* Shm = ShmSetUp(flag_threads, flag_shm_file, flag_blocks);
+  Shm* Shm = ShmSetUp(flag_threads, flag_shm_file, flag_blocks,
+                      flag_shm_punix_file);
 
   // Before we drop any privileges, set up our sniffing sockets.
   // We have to do this before calling DropPrivileges, which does a
