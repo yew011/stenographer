@@ -422,7 +422,10 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
 
   std::unique_ptr<PacketsV3> cleanup(v3);
 
-  DropPacketThreadPrivileges();
+  // Do not drop these privileges when memory sharing is enabled.
+  if (Shm) {
+    DropPacketThreadPrivileges();
+  }
   LOG(INFO) << "Thread " << thread << " starting to process packets";
 
   // Set up file writing, if requested.
