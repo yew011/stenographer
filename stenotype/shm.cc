@@ -114,7 +114,7 @@ void Shm::ShareBlock(char* base) {
   ssize_t cnt;
   cnt = send(accept_sock_, &cur_idx_, sizeof cur_idx_, 0);
   if (cnt == -1) {
-    if (errno != EAGAIN && errno !=EWOULDBLOCK) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
       LOG(FATAL) << "Shm: send blocked\n";
     } else if (errno == ECONNRESET) {
       LOG(ERROR) << "Shm: connection lost\n";
@@ -144,7 +144,7 @@ void Shm::ReclaimBlock(void) {
   for (;;) {
     cnt = recv(accept_sock_, &freed_idx, sizeof freed_idx, 0);
     if (cnt == -1) {
-      if (errno != EAGAIN && errno !=EWOULDBLOCK) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
         // Pass.
       } else if (errno == ECONNRESET) {
         LOG(ERROR) << "Shm: connection lost\n";
