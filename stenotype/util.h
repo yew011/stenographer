@@ -241,9 +241,8 @@ typedef std::unique_ptr<std::string> Error;
 class Bitmap {
  public:
   Bitmap(uint32_t size) : size_(size) {
-    map_ = static_cast<uint32_t*>(
-        calloc(size_ / VAR_BITS(*map_) + size_ % VAR_BITS(*map_) ? 1 : 0,
-               sizeof *map_));
+    alloc_ = (size_ / VAR_BITS(*map_)) + (size_ % VAR_BITS(*map_) ? 1 : 0);
+    map_ = static_cast<uint32_t*>(calloc(alloc_, sizeof *map_));
     CHECK(map_);
   }
   ~Bitmap() {
@@ -265,6 +264,7 @@ class Bitmap {
  private:
   uint32_t* map_;
   uint32_t size_;
+  size_t   alloc_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
