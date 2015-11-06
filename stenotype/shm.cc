@@ -108,7 +108,7 @@ void Shm::ShareBlock(char* base) {
 
   // Copy block to shared memory.
   map_->Set(cur_idx_);
-  memcpy(base, shm_ptr_ + (cur_idx_ << 20), 1 << 20);
+  memcpy(shm_ptr_ + (cur_idx_ << 20), base, 1 << 20);
 
   // Notify peer process.
   ssize_t cnt;
@@ -152,7 +152,7 @@ void Shm::ReclaimBlock(void) {
         connected_ = false;
         map_->ResetAll();
       } else {
-        LOG(FATAL) << "Shm: unexpected error\n";
+        LOG(FATAL) << "Shm: unexpected error: "<< strerror(errno) << "\n";
       }
       break;
     } else {
