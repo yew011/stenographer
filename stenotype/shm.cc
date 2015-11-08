@@ -111,25 +111,34 @@ void Shm::ShareBlock(char* base) {
   memcpy(shm_ptr_ + (next_idx << 20), base, 1 << 20);
 
   // Notify peer process.
-  ssize_t cnt;
-  cnt = send(accept_sock_, &next_idx, sizeof next_idx, 0);
-  if (cnt == -1) {
-    if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      LOG(FATAL) << "Shm: send blocked\n";
-    } else if (errno == ECONNRESET) {
-      LOG(ERROR) << "Shm: connection lost\n";
-      CHECK_SUCCESS(Errno(close(accept_sock_)));
-      connected_ = false;
-      map_->ResetAll();
+  char *buf = reinterpret_cast<char*>(&next_idx);
+  size_t buflen = sizeof next_idx;
+  for (;;) {
+    ssize_t cnt;
+    cnt = send(accept_sock_, buf, buflen, 0);
+    if (cnt == -1) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        // Should never happen.
+        LOG(FATAL) << "Shm: send block\n";
+      } else if (errno == ECONNRESET || errno == EPIPE) {
+        LOG(ERROR) << "Shm: connection lost\n";
+        CHECK_SUCCESS(Errno(close(accept_sock_)));
+        connected_ = false;
+        map_->ResetAll();
+      } else {
+        LOG(FATAL) << "Shm: unexpected error: "<< strerror(errno) << "\n";
+      }
     } else {
-      LOG(FATAL) << "Shm: unexpected error\n";
+      CHECK(static_cast<size_t>(cnt) <= buflen);
+      if (static_cast<size_t>(cnt) != buflen) {
+        LOG(INFO) << "Shm: partial write to 'accept_sock_'\n";
+        buf += cnt;
+        buflen -= cnt;
+        continue;
+      }
     }
-  } else {
-    if (cnt != sizeof next_idx) {
-      LOG(FATAL) << "Shm: partial write to 'accept_sock_'\n";
-    }
+    break;
   }
-
   // Move to next index.
   cur_idx_ = next_idx;
 }
@@ -139,14 +148,17 @@ void Shm::ReclaimBlock(void) {
     return;
   }
 
-  uint32_t freed_idx;
-  ssize_t cnt;
+  // Try receiving freed indices from peer process.
+  uint32_t freed_idx = 0;
+  char *buf = reinterpret_cast<char*>(&freed_idx);
+  size_t buflen = sizeof freed_idx;
   for (;;) {
-    cnt = recv(accept_sock_, &freed_idx, sizeof freed_idx, 0);
+    ssize_t cnt;
+    cnt = recv(accept_sock_, buf, buflen, 0);
     if (cnt == -1) {
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        // Pass.
-      } else if (errno == ECONNRESET) {
+        // Pass, do not block.
+      } else if (errno == ECONNRESET || errno == EPIPE) {
         LOG(ERROR) << "Shm: connection lost\n";
         CHECK_SUCCESS(Errno(close(accept_sock_)));
         connected_ = false;
@@ -154,14 +166,20 @@ void Shm::ReclaimBlock(void) {
       } else {
         LOG(FATAL) << "Shm: unexpected error: "<< strerror(errno) << "\n";
       }
-      break;
     } else {
-      if (cnt != sizeof cur_idx_) {
-        LOG(FATAL) << "Shm: partial read from 'accept_sock_'\n";
+      CHECK(static_cast<size_t>(cnt) <= buflen);
+      if (static_cast<size_t>(cnt) != buflen) {
+        LOG(INFO) << "Shm: partial read from 'accept_sock_'\n";
+        buf += cnt;
+        buflen -= cnt;
+        continue;
+      } else {
+        // Unset 'freed_idx' and try reading more.
+        map_->Unset(freed_idx);
+        continue;
       }
     }
-
-    map_->Unset(freed_idx);
+    break;
   }
 }
 
