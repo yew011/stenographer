@@ -233,6 +233,7 @@ typedef std::unique_ptr<std::string> Error;
   } while (false)
 
 #define VAR_BITS(VAR) (8 * sizeof VAR)
+#define IDX_NULL UINT32_MAX
 
 ////////////////////////////////////////////////////////////////////////////////
 //// Bitmap
@@ -248,6 +249,10 @@ class Bitmap {
   ~Bitmap() {
     free(map_);
   }
+
+  // Given 'idx', return the next unset index in the map,
+  // return 'IDX_NULL' if there is no more bit available.
+  uint32_t NextIdx(uint32_t idx);
 
   // Return true if the index is set.
   bool Isset(uint32_t idx);

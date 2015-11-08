@@ -41,6 +41,18 @@ std::string Dirname(const std::string& filename) {
   return std::string(dirname(copy));
 }
 
+uint32_t Bitmap::NextIdx(uint32_t idx) {
+  CHECK(idx < size_);
+
+  for (size_t i = 0; i < size_; i++) {
+    if (Isset((idx + i) % size_)) {
+      continue;
+    }
+    return (idx + i) % size_;
+  }
+  return IDX_NULL;
+}
+
 bool Bitmap::Isset(uint32_t idx) {
   CHECK(idx < size_);
 

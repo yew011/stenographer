@@ -101,18 +101,18 @@ void Shm::ShareBlock(char* base) {
   if (!connected_) {
     return;
   }
-  if (map_->Isset(cur_idx_)) {
+
+  // Copy block to shared memory.
+  uint32_t next_idx = map_->NextIdx(cur_idx_);
+  if (next_idx == IDX_NULL) {
     LOG(ERROR) << "Shm: shared memory no more space\n";
     return;
   }
-
-  // Copy block to shared memory.
-  map_->Set(cur_idx_);
-  memcpy(shm_ptr_ + (cur_idx_ << 20), base, 1 << 20);
+  memcpy(shm_ptr_ + (next_idx << 20), base, 1 << 20);
 
   // Notify peer process.
   ssize_t cnt;
-  cnt = send(accept_sock_, &cur_idx_, sizeof cur_idx_, 0);
+  cnt = send(accept_sock_, &next_idx, sizeof next_idx, 0);
   if (cnt == -1) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       LOG(FATAL) << "Shm: send blocked\n";
@@ -125,13 +125,13 @@ void Shm::ShareBlock(char* base) {
       LOG(FATAL) << "Shm: unexpected error\n";
     }
   } else {
-    if (cnt != sizeof cur_idx_) {
+    if (cnt != sizeof next_idx) {
       LOG(FATAL) << "Shm: partial write to 'accept_sock_'\n";
     }
   }
 
   // Move to next index.
-  cur_idx_ = (cur_idx_ + 1) % blocks_;
+  cur_idx_ = next_idx;
 }
 
 void Shm::ReclaimBlock(void) {
@@ -160,6 +160,7 @@ void Shm::ReclaimBlock(void) {
         LOG(FATAL) << "Shm: partial read from 'accept_sock_'\n";
       }
     }
+
     map_->Unset(freed_idx);
   }
 }
