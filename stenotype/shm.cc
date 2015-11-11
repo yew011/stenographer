@@ -30,9 +30,9 @@
 namespace st {
 
 Shm::Shm(std::string shm_file, uint32_t blocks, std::string punix_file) :
-  shm_file_(shm_file),
   blocks_(blocks),
   cur_idx_(0),
+  shm_file_(shm_file),
   punix_file_(punix_file),
   connected_(false) {
   // Sanity check.
