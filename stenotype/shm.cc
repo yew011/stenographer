@@ -108,6 +108,7 @@ void Shm::ShareBlock(char* base) {
     LOG(ERROR) << "Shm: shared memory no more space\n";
     return;
   }
+  Set(next_idx);
   memcpy(shm_ptr_ + (next_idx << 20), base, 1 << 20);
 
   // Notify peer process.
