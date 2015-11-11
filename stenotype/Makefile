@@ -27,7 +27,7 @@ CLANG=clang++
 CLANG_CFLAGS=-fno-omit-frame-pointer -O1 -fno-optimize-sibling-calls
 CLANG_LDFLAGS=
 
-FILES=util packets index aio stenotype
+FILES=util packets index aio stenotype shm
 
 AFL=afl-g++
 FUZZ_FILES=util index index_bin

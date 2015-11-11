@@ -232,6 +232,46 @@ typedef std::unique_ptr<std::string> Error;
     }                                                  \
   } while (false)
 
+#define VAR_BITS(VAR) (8 * sizeof VAR)
+#define IDX_NULL UINT32_MAX
+
+////////////////////////////////////////////////////////////////////////////////
+//// Bitmap
+//
+// Simple implementation of bitmap.
+class Bitmap {
+ public:
+  Bitmap(uint32_t size) : size_(size) {
+    alloc_ = (size_ / VAR_BITS(*map_)) + (size_ % VAR_BITS(*map_) ? 1 : 0);
+    map_ = static_cast<uint32_t*>(calloc(alloc_, sizeof *map_));
+    CHECK(map_);
+  }
+  ~Bitmap() {
+    free(map_);
+  }
+
+  // Given 'idx', return the next unset index in the map,
+  // return 'IDX_NULL' if there is no more bit available.
+  uint32_t NextIdx(uint32_t idx);
+
+  // Return true if the index is set.
+  bool Isset(uint32_t idx);
+
+  // Set the index in bitmap.
+  void Set(uint32_t idx);
+
+  // Unset the index in bitmap.
+  void Unset(uint32_t idx);
+
+  // Unset all indices in bitmap.
+  void ResetAll(void);
+
+ private:
+  uint32_t* map_;
+  uint32_t size_;
+  size_t   alloc_;
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 //// Synchronization primitives
 //
