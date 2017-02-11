@@ -210,7 +210,7 @@ typedef std::unique_ptr<std::string> Error;
   do {                                                       \
     ::st::Error __log_if_error_status__ = (status);          \
     if (!SUCCEEDED(__log_if_error_status__)) {               \
-      LOG(ERROR) << msg << ": " << *__log_if_error_status__; \
+      LOG(INFO) << msg << "(LOG_IF_ERROR): " << *__log_if_error_status__; \
     }                                                        \
   } while (false)
 

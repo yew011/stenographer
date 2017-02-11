@@ -380,20 +380,21 @@ void WriteIndexes(int thread, st::ProducerConsumerQueue* write_index) {
   pid_t tid = syscall(SYS_gettid);
   LOG_IF_ERROR(Errno(setpriority(PRIO_PROCESS, tid, flag_index_nicelevel)),
                "setpriority");
-  DropIndexThreadPrivileges();
+  //DropIndexThreadPrivileges();
   while (true) {
-    VLOG(1) << "Waiting for index";
+    LOG(INFO) << "Waiting for index";
     Index* i = reinterpret_cast<Index*>(write_index->Get());
-    VLOG(1) << "Got index " << int64_t(i);
+    LOG(INFO) << "Got index " << int64_t(i);
     if (i == NULL) {
+      LOG(INFO) << "Got NULL index, exiting thread";
       break;
     }
     LOG_IF_ERROR(i->Flush(), "index flush");
-    VLOG(1) << "Wrote index " << int64_t(i);
+    LOG(INFO) << "Wrote index " << int64_t(i);
     delete i;
     dog.Feed();
   }
-  VLOG(1) << "Exiting write index thread";
+  LOG(INFO) << "Exiting write index thread";
 }
 
 bool run_threads = true;
@@ -413,7 +414,7 @@ void HandleSignalsThread() {
   handler.sa_flags = 0;
   sigaction(SIGINT, &handler, NULL);
   sigaction(SIGTERM, &handler, NULL);
-  DropCommonThreadPrivileges();
+  //DropCommonThreadPrivileges();
   main_complete.WaitForNotification();
   VLOG(1) << "Signal handling done";
 }
@@ -428,7 +429,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
 
   std::unique_ptr<Packets> cleanup(v3);
 
-  DropPacketThreadPrivileges();
+  //DropPacketThreadPrivileges();
   LOG(INFO) << "Thread " << thread << " starting to process packets";
 
   // Set up file writing, if requested.
@@ -602,7 +603,7 @@ int Main(int argc, char** argv) {
   // one.  This should also be done before signal masking, because apparently
   // sometimes Linux sends a SIGSETXID signal to threads during this, and if
   // that is ignored setXid will hang forever.
-  DropPrivileges();
+  //DropPrivileges();
 
   // Start a thread whose sole purpose is to handle signals.
   // Signal handling in a multi-threaded application is HARD.  This binary
@@ -648,7 +649,7 @@ int Main(int argc, char** argv) {
   // we really don't need much anymore.  No need to create new threads, to write
   // files, to open sockets... we basically just hang around waiting for all the
   // other threads to finish.
-  DropCommonThreadPrivileges();
+  //DropCommonThreadPrivileges();
 
   for (auto thread : threads) {
     VLOG(1) << "===============Waiting for thread==============";

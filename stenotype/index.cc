@@ -273,6 +273,7 @@ Error Index::Flush() {
           << ip6_.size() << " IP6 " << proto_.size() << " protos "
           << port_.size() << " ports " << vlan_.size() << " vlan "
           << mpls_.size() << " mpls";
+  LOG(INFO) << "Wrote all index succeeds ";
   return SUCCESS;
 }
 
